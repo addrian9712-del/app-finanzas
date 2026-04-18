@@ -36,6 +36,12 @@ cd backend
 python -m unittest -v test_repository.py
 ```
 
+## Validación OpenAPI (soluciona warning de PyYAML)
+
+```bash
+ruby scripts/validate_openapi.rb backend/openapi.yaml
+```
+
 ## Demo UI de integración rápida
 
 Con el backend corriendo, abre `frontend/phase1_demo.html` en navegador para probar:

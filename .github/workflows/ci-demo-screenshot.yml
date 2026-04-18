@@ -1,0 +1,61 @@
+name: ci-demo-screenshot
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  backend-and-screenshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate OpenAPI YAML
+        run: ruby scripts/validate_openapi.rb backend/openapi.yaml
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          python -m unittest -v test_repository.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm i -D playwright
+          npx playwright install --with-deps chromium
+
+      - name: Start backend and static server
+        run: |
+          python backend/mock_server.py > /tmp/mock_server.log 2>&1 &
+          echo $! > /tmp/mock_server.pid
+          python -m http.server 8080 > /tmp/static_server.log 2>&1 &
+          echo $! > /tmp/static_server.pid
+          sleep 2
+
+      - name: Take screenshot
+        run: node scripts/take_demo_screenshot.mjs
+
+      - name: Stop services
+        if: always()
+        run: |
+          kill $(cat /tmp/mock_server.pid) || true
+          kill $(cat /tmp/static_server.pid) || true
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-demo-screenshot
+          path: artifacts/screenshots/phase1_demo.png
