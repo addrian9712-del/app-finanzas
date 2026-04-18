@@ -1,0 +1,239 @@
+openapi: 3.1.0
+info:
+  title: App Finanzas API
+  version: 0.1.0
+servers:
+  - url: /v1
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: array, items: { type: object } }
+    UserCard:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        template_id: { type: [string, 'null'] }
+        type: { type: string, enum: [task, routine, goal, study] }
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        config: { type: object, additionalProperties: true }
+        is_active: { type: boolean }
+        is_archived: { type: boolean }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+security:
+  - bearerAuth: []
+paths:
+  /card-templates:
+    get:
+      summary: List card templates
+      responses:
+        '200':
+          description: OK
+  /user-cards:
+    get:
+      summary: List user cards
+      parameters:
+        - in: query
+          name: type
+          schema: { type: string }
+        - in: query
+          name: is_active
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create user card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title, config]
+              properties:
+                template_id: { type: string }
+                type: { type: string, enum: [task, routine, goal, study] }
+                title: { type: string }
+                description: { type: string }
+                config: { type: object, additionalProperties: true }
+                is_active: { type: boolean, default: true }
+      responses:
+        '201':
+          description: Created
+  /user-cards/{id}:
+    get:
+      summary: Get user card
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+    patch:
+      summary: Update user card
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                is_active: { type: boolean }
+                is_archived: { type: boolean }
+                config: { type: object, additionalProperties: true }
+                version: { type: integer }
+      responses:
+        '200': { description: Updated }
+        '409': { description: Version conflict }
+    delete:
+      summary: Soft delete user card
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Deleted }
+  /card-instances:
+    get:
+      summary: List instances by date
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: OK }
+  /card-instances/{id}/complete:
+    post:
+      summary: Complete card instance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                completed_at: { type: string, format: date-time }
+                notes: { type: string }
+                version: { type: integer }
+      responses:
+        '200': { description: Completed }
+  /daily-plan-items:
+    get:
+      summary: List daily plan items
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Create plan item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date, user_card_id]
+              properties:
+                date: { type: string, format: date }
+                user_card_id: { type: string }
+                start_time: { type: string }
+                end_time: { type: string }
+                priority: { type: integer }
+      responses:
+        '201': { description: Created }
+  /study-subjects:
+    get:
+      summary: List study subjects
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Create study subject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                color: { type: string }
+                target_hours_week: { type: number }
+      responses:
+        '201': { description: Created }
+  /sync/push:
+    post:
+      summary: Push local changes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id, changes]
+              properties:
+                device_id: { type: string }
+                changes:
+                  type: array
+                  items:
+                    type: object
+                    required: [change_id, entity, entity_id, operation, version, payload]
+                    properties:
+                      change_id: { type: string }
+                      entity: { type: string }
+                      entity_id: { type: string }
+                      operation: { type: string, enum: [insert, update, delete] }
+                      version: { type: integer }
+                      updated_at: { type: string, format: date-time }
+                      payload: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: Accepted }
+  /sync/pull:
+    get:
+      summary: Pull remote changes
+      parameters:
+        - in: query
+          name: since
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: device_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
