@@ -35,3 +35,11 @@ Auth mock:
 cd backend
 python -m unittest -v test_repository.py
 ```
+
+## Demo UI de integración rápida
+
+Con el backend corriendo, abre `frontend/phase1_demo.html` en navegador para probar:
+- templates prediseñadas
+- creación de tarjetas
+- generación/completado de instancias
+- push/pull de sync mock

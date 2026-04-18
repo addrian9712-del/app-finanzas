@@ -16,6 +16,9 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
@@ -36,6 +39,13 @@ def auth_user(handler: BaseHTTPRequestHandler) -> str:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+        self.end_headers()
+
     def do_GET(self) -> None:
         user_id = auth_user(self)
         url = urlparse(self.path)
