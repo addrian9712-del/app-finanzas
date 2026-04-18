@@ -51,6 +51,28 @@ class RepoTests(unittest.TestCase):
         self.assertEqual(len(pulled), 1)
         self.assertEqual(pulled[0]["entity_id"], "uc_1")
 
+    def test_templates_seeded_and_filter(self):
+        all_templates = self.repo.list_card_templates()
+        self.assertGreaterEqual(len(all_templates), 4)
+        routine_templates = self.repo.list_card_templates("routine")
+        self.assertTrue(all(t["type"] == "routine" for t in routine_templates))
+
+    def test_generate_and_complete_card_instances(self):
+        card = self.repo.create_user_card(
+            self.user_id,
+            {"type": "routine", "title": "Tomar agua", "config": {"frequency": {"kind": "daily"}}},
+        )
+        created = self.repo.generate_daily_instances(self.user_id, "2026-04-20")
+        self.assertEqual(created, 1)
+
+        instances = self.repo.list_card_instances(self.user_id, "2026-04-20")
+        self.assertEqual(len(instances), 1)
+        self.assertEqual(instances[0]["user_card_id"], card["id"])
+
+        done = self.repo.complete_card_instance(self.user_id, instances[0]["id"], "completado temprano")
+        self.assertEqual(done["status"], "done")
+        self.assertEqual(done["completion_pct"], 100)
+
 
 if __name__ == "__main__":
     unittest.main()

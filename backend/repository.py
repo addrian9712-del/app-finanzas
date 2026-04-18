@@ -24,7 +24,89 @@ class Repo:
     def init_schema(self) -> None:
         schema = SCHEMA_PATH.read_text(encoding="utf-8")
         self.conn.executescript(schema)
+        self.seed_default_templates()
         self.conn.commit()
+
+    def seed_default_templates(self) -> None:
+        cur = self.conn.execute("SELECT COUNT(*) AS c FROM card_templates")
+        count = int(cur.fetchone()["c"])
+        if count > 0:
+            return
+
+        ts = now_iso()
+        templates = [
+            {
+                "id": "tpl_water_8",
+                "type": "routine",
+                "title": "Tomar agua",
+                "description": "8 vasos diarios",
+                "icon": "💧",
+                "color": "#56CFE1",
+                "default_config_json": json.dumps({"target": {"unit": "glasses", "value": 8}, "frequency": {"kind": "daily"}}),
+                "is_system": 1,
+                "version": 1,
+                "created_at": ts,
+            },
+            {
+                "id": "tpl_gym",
+                "type": "routine",
+                "title": "Ir al gym",
+                "description": "Rutina de entrenamiento",
+                "icon": "🏋️",
+                "color": "#7C6FFF",
+                "default_config_json": json.dumps({"frequency": {"kind": "weekly_n", "times": 4}}),
+                "is_system": 1,
+                "version": 1,
+                "created_at": ts,
+            },
+            {
+                "id": "tpl_study_pomodoro",
+                "type": "study",
+                "title": "Pomodoro estudio",
+                "description": "2 sesiones de enfoque",
+                "icon": "📚",
+                "color": "#F5A623",
+                "default_config_json": json.dumps({"pomodoro": {"focus_min": 25, "break_min": 5}, "target_sessions": 2}),
+                "is_system": 1,
+                "version": 1,
+                "created_at": ts,
+            },
+            {
+                "id": "tpl_daily_plan",
+                "type": "task",
+                "title": "Plan del día",
+                "description": "Top 3 prioridades",
+                "icon": "✅",
+                "color": "#5CD679",
+                "default_config_json": json.dumps({"frequency": {"kind": "daily"}, "target_items": 3}),
+                "is_system": 1,
+                "version": 1,
+                "created_at": ts,
+            },
+        ]
+        self.conn.executemany(
+            """
+            INSERT INTO card_templates(id,type,title,description,icon,color,default_config_json,is_system,version,created_at)
+            VALUES(:id,:type,:title,:description,:icon,:color,:default_config_json,:is_system,:version,:created_at)
+            """,
+            templates,
+        )
+
+    def list_card_templates(self, type_filter: str | None = None) -> list[dict[str, Any]]:
+        q = "SELECT * FROM card_templates"
+        params: list[Any] = []
+        if type_filter:
+            q += " WHERE type = ?"
+            params.append(type_filter)
+        q += " ORDER BY title ASC"
+        cur = self.conn.execute(q, tuple(params))
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            d["default_config"] = json.loads(d.pop("default_config_json") or "{}")
+            d["is_system"] = bool(d["is_system"])
+            rows.append(d)
+        return rows
 
     def create_user_card(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         card_id = f"uc_{uuid.uuid4().hex[:16]}"
@@ -175,6 +257,71 @@ class Repo:
                 }
             )
         return rows
+
+    def generate_daily_instances(self, user_id: str, date: str) -> int:
+        cards = self.list_user_cards(user_id)
+        created = 0
+        for card in cards:
+            cur = self.conn.execute(
+                "SELECT 1 FROM card_instances WHERE user_id = ? AND user_card_id = ? AND date = ?",
+                (user_id, card["id"], date),
+            )
+            if cur.fetchone():
+                continue
+            self.conn.execute(
+                """
+                INSERT INTO card_instances(id,user_card_id,user_id,date,status,completion_pct,notes,completed_at,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    f"ci_{uuid.uuid4().hex[:16]}",
+                    card["id"],
+                    user_id,
+                    date,
+                    "pending",
+                    0,
+                    None,
+                    None,
+                    now_iso(),
+                    now_iso(),
+                ),
+            )
+            created += 1
+        self.conn.commit()
+        return created
+
+    def list_card_instances(self, user_id: str, date: str) -> list[dict[str, Any]]:
+        cur = self.conn.execute(
+            """
+            SELECT ci.*
+            FROM card_instances ci
+            JOIN user_cards uc ON uc.id = ci.user_card_id
+            WHERE ci.user_id = ? AND ci.date = ? AND uc.deleted_at IS NULL
+            ORDER BY ci.created_at DESC
+            """,
+            (user_id, date),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def complete_card_instance(self, user_id: str, instance_id: str, notes: str | None = None) -> dict[str, Any]:
+        cur = self.conn.execute(
+            "SELECT * FROM card_instances WHERE id = ? AND user_id = ?",
+            (instance_id, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise KeyError("instance_not_found")
+        self.conn.execute(
+            """
+            UPDATE card_instances
+            SET status = 'done', completion_pct = 100, notes = ?, completed_at = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (notes, now_iso(), now_iso(), instance_id, user_id),
+        )
+        self.conn.commit()
+        cur2 = self.conn.execute("SELECT * FROM card_instances WHERE id = ? AND user_id = ?", (instance_id, user_id))
+        return dict(cur2.fetchone())
 
     @staticmethod
     def _normalize_card(row: dict[str, Any]) -> dict[str, Any]:

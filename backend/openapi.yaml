@@ -41,6 +41,10 @@ paths:
   /card-templates:
     get:
       summary: List card templates
+      parameters:
+        - in: query
+          name: type
+          schema: { type: string, enum: [task, routine, goal, study] }
       responses:
         '200':
           description: OK
@@ -149,6 +153,20 @@ paths:
                 version: { type: integer }
       responses:
         '200': { description: Completed }
+  /card-instances/generate:
+    post:
+      summary: Generate instances for a date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date]
+              properties:
+                date: { type: string, format: date }
+      responses:
+        '200': { description: Generated }
   /daily-plan-items:
     get:
       summary: List daily plan items

@@ -44,6 +44,20 @@ class Handler(BaseHTTPRequestHandler):
             cards = repo.list_user_cards(user_id)
             return json_response(self, HTTPStatus.OK, {"data": cards})
 
+        if url.path == "/v1/card-templates":
+            qs = parse_qs(url.query)
+            type_filter = qs.get("type", [None])[0]
+            templates = repo.list_card_templates(type_filter)
+            return json_response(self, HTTPStatus.OK, {"data": templates})
+
+        if url.path == "/v1/card-instances":
+            qs = parse_qs(url.query)
+            date = qs.get("date", [None])[0]
+            if not date:
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date is required"}})
+            instances = repo.list_card_instances(user_id, date)
+            return json_response(self, HTTPStatus.OK, {"data": instances})
+
         if url.path.startswith("/v1/user-cards/"):
             card_id = url.path.split("/")[-1]
             try:
@@ -78,6 +92,22 @@ class Handler(BaseHTTPRequestHandler):
                 return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR"}})
             result = repo.push_sync_changes(user_id, changes)
             return json_response(self, HTTPStatus.OK, {"data": result})
+
+        if url.path == "/v1/card-instances/generate":
+            date = payload.get("date")
+            if not date:
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date is required"}})
+            created = repo.generate_daily_instances(user_id, date)
+            return json_response(self, HTTPStatus.OK, {"data": {"created": created, "date": date}})
+
+        if url.path.startswith("/v1/card-instances/") and url.path.endswith("/complete"):
+            instance_id = url.path.split("/")[-2]
+            notes = payload.get("notes")
+            try:
+                updated = repo.complete_card_instance(user_id, instance_id, notes)
+            except KeyError:
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
+            return json_response(self, HTTPStatus.OK, {"data": updated})
 
         return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
 
