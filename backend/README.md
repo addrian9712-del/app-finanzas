@@ -33,7 +33,7 @@ Auth mock:
 
 ```bash
 cd backend
-python -m unittest -v test_repository.py
+python -m unittest discover -v
 ```
 
 ## Validación OpenAPI (soluciona warning de PyYAML)

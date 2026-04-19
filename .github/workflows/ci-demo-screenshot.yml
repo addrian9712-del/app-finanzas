@@ -24,7 +24,7 @@ jobs:
       - name: Run backend tests
         run: |
           cd backend
-          python -m unittest -v test_repository.py
+          python -m unittest discover -v
 
       - name: Setup Node
         uses: actions/setup-node@v4
