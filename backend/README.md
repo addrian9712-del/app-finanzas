@@ -78,7 +78,8 @@ Se agregó `backend/sync_worker.py` para empujar cambios pendientes de `sync_que
 
 - estado `processing` / `done` / `failed`,
 - incremento de `retry_count` en fallos,
-- función de backoff exponencial con tope.
+- función de backoff exponencial con tope,
+- estado `dead` cuando se alcanza `max_retry`.
 
 Ejemplo de ejecución manual:
 

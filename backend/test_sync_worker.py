@@ -3,6 +3,7 @@ import socket
 import threading
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from repository import Repo
@@ -89,6 +90,8 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(result.processed, 1)
         self.assertEqual(result.pushed, 1)
         self.assertEqual(result.failed, 0)
+        self.assertEqual(result.skipped, 0)
+        self.assertEqual(result.dead, 0)
 
         row = self.repo.conn.execute("SELECT status, retry_count FROM sync_queue WHERE id = 'chg_sync_1'").fetchone()
         self.assertEqual(row["status"], "done")
@@ -100,6 +103,8 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(result.processed, 1)
         self.assertEqual(result.pushed, 0)
         self.assertEqual(result.failed, 1)
+        self.assertEqual(result.skipped, 0)
+        self.assertEqual(result.dead, 0)
 
         row = self.repo.conn.execute("SELECT status, retry_count FROM sync_queue WHERE id = 'chg_sync_1'").fetchone()
         self.assertEqual(row["status"], "failed")
@@ -110,6 +115,29 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(SyncWorker.next_backoff_seconds(1), 10)
         self.assertEqual(SyncWorker.next_backoff_seconds(2), 20)
         self.assertEqual(SyncWorker.next_backoff_seconds(10), 300)
+
+    def test_failed_change_is_skipped_until_backoff_expires(self):
+        self.repo.conn.execute(
+            "UPDATE sync_queue SET status='failed', retry_count=1, updated_at=? WHERE id='chg_sync_1'",
+            (datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),),
+        )
+        self.repo.conn.commit()
+        _PushHandler.mode = "success"
+        result = self.worker.push_pending(self.user)
+        self.assertEqual(result.processed, 0)
+        self.assertEqual(result.skipped, 1)
+
+    def test_dead_letter_after_max_retry(self):
+        self.repo.conn.execute(
+            "UPDATE sync_queue SET status='failed', retry_count=5, updated_at=? WHERE id='chg_sync_1'",
+            ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),),
+        )
+        self.repo.conn.commit()
+        _PushHandler.mode = "success"
+        result = self.worker.push_pending(self.user)
+        self.assertEqual(result.dead, 1)
+        row = self.repo.conn.execute("SELECT status FROM sync_queue WHERE id='chg_sync_1'").fetchone()
+        self.assertEqual(row["status"], "dead")
 
 
 if __name__ == "__main__":

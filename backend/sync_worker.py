@@ -5,6 +5,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from repository import Repo
@@ -15,6 +16,8 @@ class SyncResult:
     processed: int
     pushed: int
     failed: int
+    skipped: int
+    dead: int
 
 
 class SyncWorker:
@@ -33,9 +36,26 @@ class SyncWorker:
         self.max_retry = max_retry
 
     def push_pending(self, user_id: str, limit: int = 50) -> SyncResult:
-        pending = self.repo.list_pending_sync_changes(user_id=user_id, limit=limit, max_retry=self.max_retry)
+        candidates = self.repo.list_pending_sync_changes(user_id=user_id, limit=limit, max_retry=self.max_retry + 1)
+        if not candidates:
+            return SyncResult(processed=0, pushed=0, failed=0, skipped=0, dead=0)
+
+        pending: list[dict[str, Any]] = []
+        skipped = 0
+        dead = 0
+        now_utc = datetime.now(timezone.utc)
+        for row in candidates:
+            if int(row.get("retry_count", 0)) >= self.max_retry:
+                self.repo.mark_sync_change_status(row["id"], "dead", error="max_retry_exceeded", bump_retry=False)
+                dead += 1
+                continue
+            if not self.is_due_for_retry(row, now_utc):
+                skipped += 1
+                continue
+            pending.append(row)
+
         if not pending:
-            return SyncResult(processed=0, pushed=0, failed=0)
+            return SyncResult(processed=0, pushed=0, failed=0, skipped=skipped, dead=dead)
 
         for item in pending:
             self.repo.mark_sync_change_status(item["id"], "processing")
@@ -70,7 +90,7 @@ class SyncWorker:
             err = f"push_error:{type(exc).__name__}"
             for row in pending:
                 self.repo.mark_sync_change_status(row["id"], "failed", error=err, bump_retry=True)
-            return SyncResult(processed=len(pending), pushed=0, failed=len(pending))
+            return SyncResult(processed=len(pending), pushed=0, failed=len(pending), skipped=skipped, dead=dead)
 
         data = body.get("data", {}) if isinstance(body, dict) else {}
         accepted = set(data.get("accepted", []))
@@ -88,12 +108,29 @@ class SyncWorker:
             self.repo.mark_sync_change_status(change_id, "failed", error=reason, bump_retry=True)
             failed += 1
 
-        return SyncResult(processed=len(pending), pushed=pushed, failed=failed)
+        return SyncResult(processed=len(pending), pushed=pushed, failed=failed, skipped=skipped, dead=dead)
 
     @staticmethod
     def next_backoff_seconds(retry_count: int, base_seconds: int = 5, max_seconds: int = 300) -> int:
         retry = max(0, retry_count)
         return min(max_seconds, base_seconds * (2 ** retry))
+
+    @classmethod
+    def is_due_for_retry(cls, row: dict[str, Any], now_utc: datetime | None = None) -> bool:
+        status = str(row.get("status", "pending"))
+        if status == "pending":
+            return True
+        if status != "failed":
+            return False
+        now_utc = now_utc or datetime.now(timezone.utc)
+        updated_at = str(row.get("updated_at", ""))
+        try:
+            updated_dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        retry_count = int(row.get("retry_count", 0))
+        wait_seconds = cls.next_backoff_seconds(retry_count)
+        return (now_utc - updated_dt).total_seconds() >= wait_seconds
 
 
 if __name__ == "__main__":
