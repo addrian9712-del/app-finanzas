@@ -71,3 +71,18 @@ El script intenta, en orden:
 2. Fallback con Docker (`mcr.microsoft.com/playwright`)
 
 Salida esperada: `artifacts/screenshots/phase1_demo.png`.
+
+## Worker de sync local (Fase 2 - Parte 1)
+
+Se agregó `backend/sync_worker.py` para empujar cambios pendientes de `sync_queue` hacia `/v1/sync/push` con:
+
+- estado `processing` / `done` / `failed`,
+- incremento de `retry_count` en fallos,
+- función de backoff exponencial con tope.
+
+Ejemplo de ejecución manual:
+
+```bash
+cd backend
+python sync_worker.py
+```

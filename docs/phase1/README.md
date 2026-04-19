@@ -31,7 +31,7 @@ Definir cimientos consistentes para que el desarrollo avance por módulos sin ro
 - Implementar frontend (pantallas Home / Tarjetas / Agenda)
 - ✅ CRUD base de `user_cards`, `card_instances`, `routine_steps` en backend mock
 - ✅ Gate de calidad pre-Fase 2 (alineación OpenAPI/mock, validaciones y conflictos sync)
-- Implementar worker de sincronización local
+- ✅ Worker de sincronización local (base push/retry/backoff)
 
 ## Nota operativa (PR bloqueada por cambios fuera de Codex)
 

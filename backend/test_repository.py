@@ -128,6 +128,30 @@ class RepoTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.repo.create_user_card(self.user_id, {"type": "invalid", "title": "X"})
 
+    def test_sync_queue_status_helpers(self):
+        self.repo.push_sync_changes(
+            self.user_id,
+            [
+                {
+                    "change_id": "chg_state",
+                    "entity": "user_card",
+                    "entity_id": "uc_1",
+                    "operation": "update",
+                    "version": 1,
+                    "payload": {"title": "A"},
+                }
+            ],
+        )
+        pending = self.repo.list_pending_sync_changes(self.user_id, limit=10, max_retry=5)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["id"], "chg_state")
+
+        self.repo.mark_sync_change_status("chg_state", "failed", error="network", bump_retry=True)
+        row = self.repo.conn.execute("SELECT status, retry_count, last_error FROM sync_queue WHERE id = 'chg_state'").fetchone()
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(row["retry_count"], 1)
+        self.assertEqual(row["last_error"], "network")
+
 
 if __name__ == "__main__":
     unittest.main()

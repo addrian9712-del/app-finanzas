@@ -279,6 +279,40 @@ class Repo:
             )
         return rows
 
+    def list_pending_sync_changes(self, user_id: str, limit: int = 50, max_retry: int = 5) -> list[dict[str, Any]]:
+        cur = self.conn.execute(
+            """
+            SELECT *
+            FROM sync_queue
+            WHERE user_id = ? AND status IN ('pending', 'failed') AND retry_count < ?
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (user_id, max_retry, limit),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def mark_sync_change_status(self, change_id: str, status: str, error: str | None = None, bump_retry: bool = False) -> None:
+        if bump_retry:
+            self.conn.execute(
+                """
+                UPDATE sync_queue
+                SET status = ?, retry_count = retry_count + 1, last_error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, error, now_iso(), change_id),
+            )
+        else:
+            self.conn.execute(
+                """
+                UPDATE sync_queue
+                SET status = ?, last_error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, error, now_iso(), change_id),
+            )
+        self.conn.commit()
+
     def generate_daily_instances(self, user_id: str, date: str) -> int:
         cards = self.list_user_cards(user_id)
         created = 0
