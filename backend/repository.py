@@ -323,6 +323,100 @@ class Repo:
         cur2 = self.conn.execute("SELECT * FROM card_instances WHERE id = ? AND user_id = ?", (instance_id, user_id))
         return dict(cur2.fetchone())
 
+    def list_routine_steps(self, user_id: str, user_card_id: str) -> list[dict[str, Any]]:
+        self.get_user_card(user_id, user_card_id)
+        cur = self.conn.execute(
+            """
+            SELECT *
+            FROM routine_steps
+            WHERE user_card_id = ?
+            ORDER BY position ASC, created_at ASC
+            """,
+            (user_card_id,),
+        )
+        steps: list[dict[str, Any]] = []
+        for r in cur.fetchall():
+            row = dict(r)
+            row["is_required"] = bool(row["is_required"])
+            steps.append(row)
+        return steps
+
+    def get_routine_step(self, user_id: str, step_id: str) -> dict[str, Any]:
+        cur = self.conn.execute(
+            """
+            SELECT rs.*
+            FROM routine_steps rs
+            JOIN user_cards uc ON uc.id = rs.user_card_id
+            WHERE rs.id = ? AND uc.user_id = ? AND uc.deleted_at IS NULL
+            """,
+            (step_id, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise KeyError("routine_step_not_found")
+        step = dict(row)
+        step["is_required"] = bool(step["is_required"])
+        return step
+
+    def add_routine_step(
+        self,
+        user_id: str,
+        user_card_id: str,
+        title: str,
+        is_required: bool = True,
+        estimated_min: int | None = None,
+        position: int | None = None,
+    ) -> dict[str, Any]:
+        self.get_user_card(user_id, user_card_id)
+        clean_title = str(title).strip()
+        if not clean_title:
+            raise ValueError("title is required")
+        if position is None:
+            cur = self.conn.execute(
+                "SELECT COALESCE(MAX(position), 0) AS mx FROM routine_steps WHERE user_card_id = ?",
+                (user_card_id,),
+            )
+            position = int(cur.fetchone()["mx"]) + 1
+        if int(position) < 1:
+            raise ValueError("position must be >= 1")
+        step_id = f"rs_{uuid.uuid4().hex[:16]}"
+        ts = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO routine_steps(id,user_card_id,position,title,is_required,estimated_min,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?)
+            """,
+            (step_id, user_card_id, int(position), clean_title, 1 if is_required else 0, estimated_min, ts, ts),
+        )
+        self.conn.commit()
+        return self.get_routine_step(user_id, step_id)
+
+    def update_routine_step(self, user_id: str, step_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        step = self.get_routine_step(user_id, step_id)
+        title = patch.get("title", step["title"])
+        if not str(title).strip():
+            raise ValueError("title cannot be empty")
+        position = int(patch.get("position", step["position"]))
+        if position < 1:
+            raise ValueError("position must be >= 1")
+        is_required = 1 if patch.get("is_required", step["is_required"]) else 0
+        estimated_min = patch.get("estimated_min", step.get("estimated_min"))
+        self.conn.execute(
+            """
+            UPDATE routine_steps
+            SET title = ?, is_required = ?, estimated_min = ?, position = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (str(title).strip(), is_required, estimated_min, position, now_iso(), step_id),
+        )
+        self.conn.commit()
+        return self.get_routine_step(user_id, step_id)
+
+    def delete_routine_step(self, user_id: str, step_id: str) -> None:
+        step = self.get_routine_step(user_id, step_id)
+        self.conn.execute("DELETE FROM routine_steps WHERE id = ?", (step["id"],))
+        self.conn.commit()
+
     @staticmethod
     def _normalize_card(row: dict[str, Any]) -> dict[str, Any]:
         row["config"] = json.loads(row.pop("config_json") or "{}")

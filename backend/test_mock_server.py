@@ -94,6 +94,34 @@ class MockServerTests(unittest.TestCase):
         payload = json.loads(ctx.exception.read().decode("utf-8"))
         self.assertEqual(payload["error"]["code"], "VALIDATION_ERROR")
 
+    def test_routine_steps_flow(self):
+        created = self.request_json(
+            "POST",
+            "/v1/user-cards",
+            {"type": "routine", "title": "Rutina agua", "config": {"frequency": {"kind": "daily"}}},
+            expected_status=201,
+        )
+        card_id = created["data"]["id"]
+
+        step = self.request_json(
+            "POST",
+            f"/v1/user-cards/{card_id}/routine-steps",
+            {"title": "Tomar agua", "position": 1},
+            expected_status=201,
+        )
+        step_id = step["data"]["id"]
+
+        listed = self.request_json("GET", f"/v1/user-cards/{card_id}/routine-steps")
+        self.assertEqual(len(listed["data"]), 1)
+        self.assertEqual(listed["data"][0]["id"], step_id)
+
+        patched = self.request_json("PATCH", f"/v1/routine-steps/{step_id}", {"title": "Tomar 2 vasos"})
+        self.assertEqual(patched["data"]["title"], "Tomar 2 vasos")
+
+        self.request_json("DELETE", f"/v1/routine-steps/{step_id}", expected_status=204)
+        listed_after = self.request_json("GET", f"/v1/user-cards/{card_id}/routine-steps")
+        self.assertEqual(len(listed_after["data"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

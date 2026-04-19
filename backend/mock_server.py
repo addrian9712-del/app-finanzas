@@ -75,6 +75,14 @@ def build_handler(repo: Repo):
                 instances = repo.list_card_instances(user_id, date)
                 return json_response(self, HTTPStatus.OK, {"data": instances})
 
+            if url.path.startswith("/v1/user-cards/") and url.path.endswith("/routine-steps"):
+                user_card_id = url.path.split("/")[-2]
+                try:
+                    steps = repo.list_routine_steps(user_id, user_card_id)
+                except KeyError:
+                    return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
+                return json_response(self, HTTPStatus.OK, {"data": steps})
+
             if url.path.startswith("/v1/user-cards/"):
                 card_id = url.path.split("/")[-1]
                 try:
@@ -119,6 +127,26 @@ def build_handler(repo: Repo):
                 created = repo.generate_daily_instances(user_id, date)
                 return json_response(self, HTTPStatus.OK, {"data": {"created": created, "date": date}})
 
+            if url.path.startswith("/v1/user-cards/") and url.path.endswith("/routine-steps"):
+                user_card_id = url.path.split("/")[-2]
+                title = payload.get("title")
+                if not str(title or "").strip():
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "title is required"}})
+                try:
+                    step = repo.add_routine_step(
+                        user_id=user_id,
+                        user_card_id=user_card_id,
+                        title=str(title),
+                        is_required=bool(payload.get("is_required", True)),
+                        estimated_min=payload.get("estimated_min"),
+                        position=payload.get("position"),
+                    )
+                except KeyError:
+                    return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
+                except ValueError as e:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": str(e)}})
+                return json_response(self, HTTPStatus.CREATED, {"data": step})
+
             if url.path.startswith("/v1/card-instances/") and url.path.endswith("/complete"):
                 instance_id = url.path.split("/")[-2]
                 notes = payload.get("notes")
@@ -147,6 +175,16 @@ def build_handler(repo: Repo):
                     return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": str(e)}})
                 return json_response(self, HTTPStatus.OK, {"data": card})
 
+            if url.path.startswith("/v1/routine-steps/"):
+                step_id = url.path.split("/")[-1]
+                try:
+                    step = repo.update_routine_step(user_id, step_id, payload)
+                except KeyError:
+                    return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
+                except ValueError as e:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": str(e)}})
+                return json_response(self, HTTPStatus.OK, {"data": step})
+
             return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
 
         def do_DELETE(self) -> None:
@@ -157,6 +195,17 @@ def build_handler(repo: Repo):
                 card_id = url.path.split("/")[-1]
                 try:
                     repo.delete_user_card(user_id, card_id)
+                except KeyError:
+                    return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
+                self.send_response(HTTPStatus.NO_CONTENT)
+                with_cors(self)
+                self.end_headers()
+                return
+
+            if url.path.startswith("/v1/routine-steps/"):
+                step_id = url.path.split("/")[-1]
+                try:
+                    repo.delete_routine_step(user_id, step_id)
                 except KeyError:
                     return json_response(self, HTTPStatus.NOT_FOUND, {"error": {"code": "NOT_FOUND"}})
                 self.send_response(HTTPStatus.NO_CONTENT)

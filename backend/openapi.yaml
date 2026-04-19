@@ -123,6 +123,70 @@ paths:
           schema: { type: string }
       responses:
         '204': { description: Deleted }
+  /user-cards/{id}/routine-steps:
+    get:
+      summary: List routine steps for a routine card
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+    post:
+      summary: Create routine step for a routine card
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                is_required: { type: boolean, default: true }
+                estimated_min: { type: [integer, 'null'] }
+                position: { type: [integer, 'null'] }
+      responses:
+        '201': { description: Created }
+        '404': { description: Not found }
+  /routine-steps/{id}:
+    patch:
+      summary: Update a routine step
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                is_required: { type: boolean }
+                estimated_min: { type: [integer, 'null'] }
+                position: { type: integer }
+      responses:
+        '200': { description: Updated }
+        '404': { description: Not found }
+    delete:
+      summary: Delete a routine step
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Deleted }
   /card-instances:
     get:
       summary: List instances by date

@@ -29,5 +29,5 @@ Definir cimientos consistentes para que el desarrollo avance por módulos sin ro
 ## Siguiente fase sugerida
 
 - Implementar frontend (pantallas Home / Tarjetas / Agenda)
-- Implementar CRUD de `user_cards`, `card_instances`, `routine_steps`
+- ✅ CRUD base de `user_cards`, `card_instances`, `routine_steps` en backend mock
 - Implementar worker de sincronización local

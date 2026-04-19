@@ -73,6 +73,26 @@ class RepoTests(unittest.TestCase):
         self.assertEqual(done["status"], "done")
         self.assertEqual(done["completion_pct"], 100)
 
+    def test_routine_steps_crud(self):
+        card = self.repo.create_user_card(
+            self.user_id,
+            {"type": "routine", "title": "Rutina mañana", "config": {"frequency": {"kind": "daily"}}},
+        )
+
+        step = self.repo.add_routine_step(self.user_id, card["id"], "Tomar agua", position=1, estimated_min=2)
+        self.assertEqual(step["title"], "Tomar agua")
+        self.assertEqual(step["position"], 1)
+        self.assertTrue(step["is_required"])
+
+        steps = self.repo.list_routine_steps(self.user_id, card["id"])
+        self.assertEqual(len(steps), 1)
+
+        updated = self.repo.update_routine_step(self.user_id, step["id"], {"title": "Tomar 2 vasos"})
+        self.assertEqual(updated["title"], "Tomar 2 vasos")
+
+        self.repo.delete_routine_step(self.user_id, step["id"])
+        self.assertEqual(self.repo.list_routine_steps(self.user_id, card["id"]), [])
+
 
 if __name__ == "__main__":
     unittest.main()

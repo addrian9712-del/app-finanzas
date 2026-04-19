@@ -26,6 +26,10 @@ Auth mock:
 - `GET /v1/card-instances?date=YYYY-MM-DD`
 - `POST /v1/card-instances/generate`
 - `POST /v1/card-instances/{id}/complete`
+- `GET /v1/user-cards/{id}/routine-steps`
+- `POST /v1/user-cards/{id}/routine-steps`
+- `PATCH /v1/routine-steps/{id}`
+- `DELETE /v1/routine-steps/{id}`
 - `POST /v1/sync/push`
 - `GET /v1/sync/pull`
 
