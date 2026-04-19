@@ -1,0 +1,49 @@
+name: ci-demo-screenshot
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  backend-and-screenshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate OpenAPI YAML
+        run: ruby scripts/validate_openapi.rb backend/openapi.yaml
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          python -m unittest discover -v
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright (local runner path)
+        continue-on-error: true
+        run: |
+          npm init -y
+          npm i -D playwright
+          npx playwright install --with-deps chromium
+
+      - name: Take screenshot (local playwright or docker fallback)
+        run: |
+          ./scripts/capture_demo_screenshot.sh
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-demo-screenshot
+          path: artifacts/screenshots/phase1_demo.png
