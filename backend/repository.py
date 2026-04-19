@@ -109,14 +109,21 @@ class Repo:
         return rows
 
     def create_user_card(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        allowed_types = {"task", "routine", "goal", "study"}
+        card_type = str(payload["type"])
+        if card_type not in allowed_types:
+            raise ValueError("invalid_type")
+        title = str(payload["title"]).strip()
+        if not title:
+            raise ValueError("title_required")
         card_id = f"uc_{uuid.uuid4().hex[:16]}"
         ts = now_iso()
         row = {
             "id": card_id,
             "user_id": user_id,
             "template_id": payload.get("template_id"),
-            "type": payload["type"],
-            "title": payload["title"],
+            "type": card_type,
+            "title": title,
             "description": payload.get("description"),
             "icon": payload.get("icon"),
             "color": payload.get("color"),
@@ -208,30 +215,44 @@ class Repo:
 
     def push_sync_changes(self, user_id: str, changes: list[dict[str, Any]]) -> dict[str, Any]:
         accepted: list[str] = []
+        rejected: list[dict[str, str]] = []
         for ch in changes:
-            self.conn.execute(
-                """
-                INSERT INTO sync_queue(id,user_id,entity,entity_id,operation,payload_json,version,status,retry_count,last_error,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    ch["change_id"],
-                    user_id,
-                    ch["entity"],
-                    ch["entity_id"],
-                    ch["operation"],
-                    json.dumps(ch.get("payload", {}), ensure_ascii=False),
-                    int(ch.get("version", 1)),
-                    "pending",
-                    0,
-                    None,
-                    now_iso(),
-                    now_iso(),
-                ),
-            )
-            accepted.append(ch["change_id"])
+            change_id = str(ch.get("change_id", ""))
+            if not change_id:
+                rejected.append({"change_id": "", "reason": "change_id_required"})
+                continue
+            try:
+                self.conn.execute(
+                    """
+                    INSERT INTO sync_queue(id,user_id,entity,entity_id,operation,payload_json,version,status,retry_count,last_error,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        change_id,
+                        user_id,
+                        ch["entity"],
+                        ch["entity_id"],
+                        ch["operation"],
+                        json.dumps(ch.get("payload", {}), ensure_ascii=False),
+                        int(ch.get("version", 1)),
+                        "pending",
+                        0,
+                        None,
+                        now_iso(),
+                        now_iso(),
+                    ),
+                )
+                accepted.append(change_id)
+            except sqlite3.IntegrityError:
+                cur = self.conn.execute("SELECT user_id FROM sync_queue WHERE id = ?", (change_id,))
+                row = cur.fetchone()
+                if row and row["user_id"] == user_id:
+                    # idempotency: already inserted for this same user
+                    accepted.append(change_id)
+                else:
+                    rejected.append({"change_id": change_id, "reason": "duplicate_change_id"})
         self.conn.commit()
-        return {"accepted": accepted, "rejected": []}
+        return {"accepted": accepted, "rejected": rejected}
 
     def pull_sync_changes(self, user_id: str, since: str | None = None) -> list[dict[str, Any]]:
         q = "SELECT * FROM sync_queue WHERE user_id = ?"
@@ -416,6 +437,81 @@ class Repo:
         step = self.get_routine_step(user_id, step_id)
         self.conn.execute("DELETE FROM routine_steps WHERE id = ?", (step["id"],))
         self.conn.commit()
+
+    def list_daily_plan_items(self, user_id: str, date: str) -> list[dict[str, Any]]:
+        cur = self.conn.execute(
+            """
+            SELECT *
+            FROM daily_plan_items
+            WHERE user_id = ? AND date = ?
+            ORDER BY COALESCE(start_time, ''), created_at ASC
+            """,
+            (user_id, date),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def create_daily_plan_item(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        item_id = f"dpi_{uuid.uuid4().hex[:16]}"
+        ts = now_iso()
+        row = {
+            "id": item_id,
+            "user_id": user_id,
+            "date": payload["date"],
+            "user_card_id": payload["user_card_id"],
+            "start_time": payload.get("start_time"),
+            "end_time": payload.get("end_time"),
+            "priority": int(payload.get("priority", 2)),
+            "energy_level": int(payload.get("energy_level", 2)),
+            "calendar_event_id": payload.get("calendar_event_id"),
+            "created_at": ts,
+            "updated_at": ts,
+        }
+        self.conn.execute(
+            """
+            INSERT INTO daily_plan_items(
+              id,user_id,date,user_card_id,start_time,end_time,priority,energy_level,calendar_event_id,created_at,updated_at
+            ) VALUES (
+              :id,:user_id,:date,:user_card_id,:start_time,:end_time,:priority,:energy_level,:calendar_event_id,:created_at,:updated_at
+            )
+            """,
+            row,
+        )
+        self.conn.commit()
+        cur = self.conn.execute("SELECT * FROM daily_plan_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+        return dict(cur.fetchone())
+
+    def list_study_subjects(self, user_id: str) -> list[dict[str, Any]]:
+        cur = self.conn.execute(
+            "SELECT * FROM study_subjects WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def create_study_subject(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise ValueError("name_required")
+        subject_id = f"sub_{uuid.uuid4().hex[:16]}"
+        ts = now_iso()
+        row = {
+            "id": subject_id,
+            "user_id": user_id,
+            "name": name,
+            "color": payload.get("color"),
+            "target_hours_week": float(payload.get("target_hours_week", 0)),
+            "created_at": ts,
+            "updated_at": ts,
+        }
+        self.conn.execute(
+            """
+            INSERT INTO study_subjects(id,user_id,name,color,target_hours_week,created_at,updated_at)
+            VALUES(:id,:user_id,:name,:color,:target_hours_week,:created_at,:updated_at)
+            """,
+            row,
+        )
+        self.conn.commit()
+        cur = self.conn.execute("SELECT * FROM study_subjects WHERE id = ? AND user_id = ?", (subject_id, user_id))
+        return dict(cur.fetchone())
 
     @staticmethod
     def _normalize_card(row: dict[str, Any]) -> dict[str, Any]:

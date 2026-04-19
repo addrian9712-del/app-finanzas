@@ -30,8 +30,12 @@ Auth mock:
 - `POST /v1/user-cards/{id}/routine-steps`
 - `PATCH /v1/routine-steps/{id}`
 - `DELETE /v1/routine-steps/{id}`
+- `GET /v1/daily-plan-items?date=YYYY-MM-DD`
+- `POST /v1/daily-plan-items`
+- `GET /v1/study-subjects`
+- `POST /v1/study-subjects`
 - `POST /v1/sync/push`
-- `GET /v1/sync/pull`
+- `GET /v1/sync/pull?device_id=<id>&since=<ISO8601>`
 
 ## Pruebas
 

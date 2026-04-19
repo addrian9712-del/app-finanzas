@@ -85,6 +85,18 @@ class MockServerTests(unittest.TestCase):
         done = self.request_json("POST", f"/v1/card-instances/{instance_id}/complete", {"notes": "done"})
         self.assertEqual(done["data"]["status"], "done")
 
+    def test_invalid_domain_values(self):
+        bad_type = self.request_json(
+            "POST",
+            "/v1/user-cards",
+            {"type": "unknown", "title": "invalid"},
+            expected_status=400,
+        )
+        self.assertEqual(bad_type["error"]["code"], "VALIDATION_ERROR")
+
+        bad_date = self.request_json("POST", "/v1/card-instances/generate", {"date": "20-04-2026"}, expected_status=400)
+        self.assertEqual(bad_date["error"]["code"], "VALIDATION_ERROR")
+
     def test_invalid_json_returns_validation_error(self):
         req = Request(self.url("/v1/user-cards"), data=b"{bad-json", method="POST")
         req.add_header("Content-Type", "application/json")
@@ -121,6 +133,77 @@ class MockServerTests(unittest.TestCase):
         self.request_json("DELETE", f"/v1/routine-steps/{step_id}", expected_status=204)
         listed_after = self.request_json("GET", f"/v1/user-cards/{card_id}/routine-steps")
         self.assertEqual(len(listed_after["data"]), 0)
+
+    def test_sync_conflict_cases_and_required_device_id(self):
+        missing_device = self.request_json("POST", "/v1/sync/push", {"changes": []}, expected_status=400)
+        self.assertEqual(missing_device["error"]["code"], "VALIDATION_ERROR")
+
+        first = self.request_json(
+            "POST",
+            "/v1/sync/push",
+            {
+                "device_id": "dev_1",
+                "changes": [
+                    {
+                        "change_id": "chg_dup_http",
+                        "entity": "user_card",
+                        "entity_id": "uc_1",
+                        "operation": "update",
+                        "version": 1,
+                        "payload": {"title": "A"},
+                    }
+                ],
+            },
+        )
+        second = self.request_json(
+            "POST",
+            "/v1/sync/push",
+            {
+                "device_id": "dev_1",
+                "changes": [
+                    {
+                        "change_id": "chg_dup_http",
+                        "entity": "user_card",
+                        "entity_id": "uc_1",
+                        "operation": "update",
+                        "version": 1,
+                        "payload": {"title": "A"},
+                    }
+                ],
+            },
+        )
+        self.assertEqual(first["data"]["accepted"], ["chg_dup_http"])
+        self.assertEqual(second["data"]["accepted"], ["chg_dup_http"])
+        self.assertEqual(second["data"]["rejected"], [])
+
+        missing_pull_device = self.request_json("GET", "/v1/sync/pull?since=2026-04-20T00:00:00Z", expected_status=400)
+        self.assertEqual(missing_pull_device["error"]["code"], "VALIDATION_ERROR")
+        missing_pull_since = self.request_json("GET", "/v1/sync/pull?device_id=dev_1", expected_status=400)
+        self.assertEqual(missing_pull_since["error"]["code"], "VALIDATION_ERROR")
+
+    def test_daily_plan_and_study_subjects_are_implemented(self):
+        card = self.request_json(
+            "POST",
+            "/v1/user-cards",
+            {"type": "task", "title": "Plan day", "config": {"frequency": {"kind": "daily"}}},
+            expected_status=201,
+        )
+        card_id = card["data"]["id"]
+        created_plan = self.request_json(
+            "POST",
+            "/v1/daily-plan-items",
+            {"date": "2026-04-20", "user_card_id": card_id, "priority": 1},
+            expected_status=201,
+        )
+        self.assertEqual(created_plan["data"]["user_card_id"], card_id)
+
+        listed_plan = self.request_json("GET", "/v1/daily-plan-items?date=2026-04-20")
+        self.assertGreaterEqual(len(listed_plan["data"]), 1)
+
+        created_subject = self.request_json("POST", "/v1/study-subjects", {"name": "Matemáticas"}, expected_status=201)
+        self.assertEqual(created_subject["data"]["name"], "Matemáticas")
+        listed_subjects = self.request_json("GET", "/v1/study-subjects")
+        self.assertGreaterEqual(len(listed_subjects["data"]), 1)
 
 
 if __name__ == "__main__":

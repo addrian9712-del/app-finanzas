@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -46,6 +47,22 @@ def auth_user(handler: BaseHTTPRequestHandler) -> str:
     return "usr_demo"
 
 
+def is_iso_date(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def is_iso_datetime(value: str) -> bool:
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return True
+    except ValueError:
+        return False
+
+
 def build_handler(repo: Repo):
     class Handler(BaseHTTPRequestHandler):
         def do_OPTIONS(self) -> None:
@@ -72,8 +89,24 @@ def build_handler(repo: Repo):
                 date = qs.get("date", [None])[0]
                 if not date:
                     return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date is required"}})
+                if not is_iso_date(date):
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date must be YYYY-MM-DD"}})
                 instances = repo.list_card_instances(user_id, date)
                 return json_response(self, HTTPStatus.OK, {"data": instances})
+
+            if url.path == "/v1/daily-plan-items":
+                qs = parse_qs(url.query)
+                date = qs.get("date", [None])[0]
+                if not date:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date is required"}})
+                if not is_iso_date(date):
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date must be YYYY-MM-DD"}})
+                items = repo.list_daily_plan_items(user_id, date)
+                return json_response(self, HTTPStatus.OK, {"data": items})
+
+            if url.path == "/v1/study-subjects":
+                subjects = repo.list_study_subjects(user_id)
+                return json_response(self, HTTPStatus.OK, {"data": subjects})
 
             if url.path.startswith("/v1/user-cards/") and url.path.endswith("/routine-steps"):
                 user_card_id = url.path.split("/")[-2]
@@ -94,6 +127,13 @@ def build_handler(repo: Repo):
             if url.path == "/v1/sync/pull":
                 qs = parse_qs(url.query)
                 since = qs.get("since", [None])[0]
+                device_id = qs.get("device_id", [None])[0]
+                if not device_id:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "device_id is required"}})
+                if not since:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "since is required"}})
+                if not is_iso_datetime(since):
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "since must be ISO date-time"}})
                 changes = repo.pull_sync_changes(user_id, since)
                 return json_response(self, HTTPStatus.OK, {"data": {"changes": changes}})
 
@@ -110,11 +150,17 @@ def build_handler(repo: Repo):
                 required = {"type", "title"}
                 if not required.issubset(payload):
                     return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "type and title are required"}})
-                card = repo.create_user_card(user_id, payload)
+                try:
+                    card = repo.create_user_card(user_id, payload)
+                except ValueError as e:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": str(e)}})
                 return json_response(self, HTTPStatus.CREATED, {"data": card})
 
             if url.path == "/v1/sync/push":
+                device_id = str(payload.get("device_id", "")).strip()
                 changes = payload.get("changes", [])
+                if not device_id:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "device_id is required"}})
                 if not isinstance(changes, list):
                     return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "changes must be a list"}})
                 result = repo.push_sync_changes(user_id, changes)
@@ -124,8 +170,27 @@ def build_handler(repo: Repo):
                 date = payload.get("date")
                 if not date:
                     return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date is required"}})
+                if not is_iso_date(str(date)):
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date must be YYYY-MM-DD"}})
                 created = repo.generate_daily_instances(user_id, date)
                 return json_response(self, HTTPStatus.OK, {"data": {"created": created, "date": date}})
+
+            if url.path == "/v1/daily-plan-items":
+                date = str(payload.get("date", ""))
+                user_card_id = str(payload.get("user_card_id", "")).strip()
+                if not is_iso_date(date):
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "date must be YYYY-MM-DD"}})
+                if not user_card_id:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": "user_card_id is required"}})
+                item = repo.create_daily_plan_item(user_id, payload)
+                return json_response(self, HTTPStatus.CREATED, {"data": item})
+
+            if url.path == "/v1/study-subjects":
+                try:
+                    subject = repo.create_study_subject(user_id, payload)
+                except ValueError as e:
+                    return json_response(self, HTTPStatus.BAD_REQUEST, {"error": {"code": "VALIDATION_ERROR", "message": str(e)}})
+                return json_response(self, HTTPStatus.CREATED, {"data": subject})
 
             if url.path.startswith("/v1/user-cards/") and url.path.endswith("/routine-steps"):
                 user_card_id = url.path.split("/")[-2]

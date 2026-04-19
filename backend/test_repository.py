@@ -93,6 +93,41 @@ class RepoTests(unittest.TestCase):
         self.repo.delete_routine_step(self.user_id, step["id"])
         self.assertEqual(self.repo.list_routine_steps(self.user_id, card["id"]), [])
 
+    def test_sync_push_is_idempotent_for_duplicate_change_id(self):
+        first = self.repo.push_sync_changes(
+            self.user_id,
+            [
+                {
+                    "change_id": "chg_dup",
+                    "entity": "user_card",
+                    "entity_id": "uc_1",
+                    "operation": "update",
+                    "version": 1,
+                    "payload": {"title": "A"},
+                }
+            ],
+        )
+        second = self.repo.push_sync_changes(
+            self.user_id,
+            [
+                {
+                    "change_id": "chg_dup",
+                    "entity": "user_card",
+                    "entity_id": "uc_1",
+                    "operation": "update",
+                    "version": 1,
+                    "payload": {"title": "A"},
+                }
+            ],
+        )
+        self.assertEqual(first["accepted"], ["chg_dup"])
+        self.assertEqual(second["accepted"], ["chg_dup"])
+        self.assertEqual(second["rejected"], [])
+
+    def test_create_user_card_rejects_invalid_type(self):
+        with self.assertRaises(ValueError):
+            self.repo.create_user_card(self.user_id, {"type": "invalid", "title": "X"})
+
 
 if __name__ == "__main__":
     unittest.main()

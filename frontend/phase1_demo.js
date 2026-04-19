@@ -109,6 +109,7 @@ window.completeInstance = completeInstance;
 
 async function pushSync() {
   const payload = {
+    device_id: "demo_web_device",
     changes: [
       {
         change_id: `chg_${Date.now()}`,
@@ -125,7 +126,8 @@ async function pushSync() {
 }
 
 async function pullSync() {
-  const data = await api.req("/v1/sync/pull");
+  const since = encodeURIComponent("1970-01-01T00:00:00Z");
+  const data = await api.req(`/v1/sync/pull?device_id=demo_web_device&since=${since}`);
   $("sync").innerHTML = data.data.changes.map((c) => itemHtml(`${c.entity} ${c.operation}`, c.change_id)).join("");
   setStatus(`Pull OK: ${data.data.changes.length} cambio(s)`);
 }
