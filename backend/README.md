@@ -49,3 +49,17 @@ Con el backend corriendo, abre `frontend/phase1_demo.html` en navegador para pro
 - creación de tarjetas
 - generación/completado de instancias
 - push/pull de sync mock
+
+## Screenshot automático de la demo (sin browser tool interactivo)
+
+Desde la raíz del repo:
+
+```bash
+./scripts/capture_demo_screenshot.sh
+```
+
+El script intenta, en orden:
+1. Playwright local (`node_modules/playwright`)
+2. Fallback con Docker (`mcr.microsoft.com/playwright`)
+
+Salida esperada: `artifacts/screenshots/phase1_demo.png`.

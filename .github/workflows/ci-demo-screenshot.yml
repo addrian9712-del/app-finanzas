@@ -31,28 +31,16 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Playwright
+      - name: Install Playwright (local runner path)
+        continue-on-error: true
         run: |
           npm init -y
           npm i -D playwright
           npx playwright install --with-deps chromium
 
-      - name: Start backend and static server
+      - name: Take screenshot (local playwright or docker fallback)
         run: |
-          python backend/mock_server.py > /tmp/mock_server.log 2>&1 &
-          echo $! > /tmp/mock_server.pid
-          python -m http.server 8080 > /tmp/static_server.log 2>&1 &
-          echo $! > /tmp/static_server.pid
-          sleep 2
-
-      - name: Take screenshot
-        run: node scripts/take_demo_screenshot.mjs
-
-      - name: Stop services
-        if: always()
-        run: |
-          kill $(cat /tmp/mock_server.pid) || true
-          kill $(cat /tmp/static_server.pid) || true
+          ./scripts/capture_demo_screenshot.sh
 
       - name: Upload screenshot artifact
         uses: actions/upload-artifact@v4
